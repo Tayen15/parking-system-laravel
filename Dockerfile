@@ -1,12 +1,25 @@
 # syntax=docker/dockerfile:1.7
 
 # Stage 1: Install PHP dependencies with Composer
-FROM composer:2 AS vendor
+FROM php:8.3-cli-alpine AS vendor
 WORKDIR /app
+
+RUN apk add --no-cache \
+    git \
+    icu-dev \
+    libzip-dev \
+    unzip \
+    zip \
+    && docker-php-ext-install \
+    intl \
+    zip
+
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
 COPY composer.json composer.lock ./
 RUN composer install \
     --no-dev \
+    --no-scripts \
     --no-interaction \
     --no-progress \
     --prefer-dist \
