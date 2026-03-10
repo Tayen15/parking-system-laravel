@@ -1,4 +1,4 @@
-name: Build and Deploy Laravel Container
+name: Build Laravel Docker Image
 
 on:
   push:
@@ -17,6 +17,7 @@ jobs:
       packages: write
     outputs:
       image_ref: ${{ steps.vars.outputs.image_ref }}
+      image_latest: ${{ steps.vars.outputs.image_latest }}
 
     steps:
       - name: Checkout
@@ -28,8 +29,10 @@ jobs:
           OWNER_LOWER=$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')
           IMAGE_REPO="${OWNER_LOWER}/sistem-parkir-laravel"
           IMAGE_REF="${{ env.REGISTRY }}/${IMAGE_REPO}:${GITHUB_SHA}"
+          IMAGE_LATEST="${{ env.REGISTRY }}/${IMAGE_REPO}:latest"
 
           echo "image_ref=${IMAGE_REF}" >> "$GITHUB_OUTPUT"
+          echo "image_latest=${IMAGE_LATEST}" >> "$GITHUB_OUTPUT"
           echo "image_repo=${IMAGE_REPO}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
@@ -50,53 +53,9 @@ jobs:
           push: true
           tags: |
             ${{ steps.vars.outputs.image_ref }}
-            ${{ env.REGISTRY }}/${{ steps.vars.outputs.image_repo }}:latest
+            ${{ steps.vars.outputs.image_latest }}
 
-  deploy:
-    runs-on: ubuntu-latest
-    needs: build-and-push
-
-    steps:
-      - name: Configure SSH key
+      - name: Show image tags
         run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
-
-      - name: Deploy on VPS
-        env:
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_USER: ${{ secrets.VPS_USER }}
-          VPS_APP_DIR: ${{ secrets.VPS_APP_DIR }}
-          VPS_ENV_FILE: ${{ secrets.VPS_ENV_FILE }}
-          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
-          GHCR_PAT: ${{ secrets.GHCR_PAT }}
-          IMAGE_REF: ${{ needs.build-and-push.outputs.image_ref }}
-          CONTAINER_NAME: ${{ secrets.CONTAINER_NAME }}
-          APP_PORT: ${{ secrets.APP_PORT }}
-        run: |
-          ssh "${VPS_USER}@${VPS_HOST}" "
-            set -e
-            cd ${VPS_APP_DIR}
-
-            docker login ghcr.io -u ${GHCR_USERNAME} -p ${GHCR_PAT}
-            docker pull ${IMAGE_REF}
-
-            docker stop ${CONTAINER_NAME} || true
-            docker rm ${CONTAINER_NAME} || true
-
-            docker run -d \
-              --name ${CONTAINER_NAME} \
-              --restart unless-stopped \
-              --env-file ${VPS_ENV_FILE} \
-              -p ${APP_PORT}:9000 \
-              ${IMAGE_REF}
-
-            docker exec ${CONTAINER_NAME} php artisan migrate --force
-            docker exec ${CONTAINER_NAME} php artisan config:clear
-            docker exec ${CONTAINER_NAME} php artisan cache:clear
-            docker exec ${CONTAINER_NAME} php artisan config:cache
-            docker exec ${CONTAINER_NAME} php artisan route:cache
-            docker exec ${CONTAINER_NAME} php artisan view:cache
-          "
+          echo "SHA tag   : ${{ steps.vars.outputs.image_ref }}"
+          echo "Latest tag: ${{ steps.vars.outputs.image_latest }}"
